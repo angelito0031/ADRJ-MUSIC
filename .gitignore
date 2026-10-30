@@ -35,3 +35,8 @@ config.json
 
 # Server
 server/node_modules/
+
+# Large binaries (no van a GitHub, solo están localmente)
+app/src/main/jniLibs/
+app/src/main/res/raw/ytdlp
+*.zip.so
