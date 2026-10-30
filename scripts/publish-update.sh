@@ -27,7 +27,7 @@ fi
 
 # Construir payload SIN signature
 PAYLOAD=$(cat <<JSON
-{"latestVersionCode":$VERSION_CODE,"latestVersionName":"$VERSION_NAME","forceUpdate":$FORCE,"minimumVersionCode":1,"message":"$MESSAGE","downloadUrl":"https://github.com/$GITHUB_USER/$GITHUB_REPO/releases/download/v$VERSION_NAME/app-release.apk","publishedAt":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+{"latestVersionCode":$VERSION_CODE,"latestVersionName":"$VERSION_NAME","forceUpdate":$FORCE,"minimumVersionCode":1,"message":"$MESSAGE","downloadUrl":"https://gitlab.com/$GITHUB_USER/$GITHUB_REPO/-/releases/v$VERSION_NAME/downloads/app-release.apk","publishedAt":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
 JSON
 )
 
@@ -58,4 +58,4 @@ git push origin config --force
 git checkout main
 
 echo ""
-echo "✅ Publicado en: https://raw.githubusercontent.com/$GITHUB_USER/$GITHUB_REPO/config/force_update/force_update.json"
+echo "✅ Publicado en: https://gitlab.com/$GITHUB_USER/$GITHUB_REPO/-/raw/config/force_update/force_update.json"

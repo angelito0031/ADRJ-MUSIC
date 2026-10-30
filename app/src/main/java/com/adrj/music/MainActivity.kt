@@ -29,6 +29,9 @@ import com.adrj.music.ui.components.MiniPlayer
 import com.adrj.music.ui.components.IosGlassBackground
 import com.adrj.music.ui.screens.*
 import com.adrj.music.ui.theme.ADRJmusicTheme
+import com.adrj.music.updates.UpdateChecker
+import com.adrj.music.updates.UpdateInfo
+import com.adrj.music.updates.UpdateModal
 
 class MainActivity : ComponentActivity() {
     private val permissionLauncher = registerForActivityResult(
@@ -60,6 +63,14 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
+            // Estado de actualizaciones
+            var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+            var updateDismissed by remember { mutableStateOf(false) }
+
+            LaunchedEffect(Unit) {
+                updateInfo = UpdateChecker.check(ctx, force = true)
+            }
+
             ADRJmusicTheme(
                 darkTheme = settings.dark,
                 accent = settings.accent,
@@ -76,6 +87,14 @@ class MainActivity : ComponentActivity() {
                         if (newSettings.dynamicColor != PrefsState.dynamicColor) PrefsState.setDynamicColor(ctx, newSettings.dynamicColor)
                     }
                 }
+            }
+
+            // Modal de actualización (encima de todo, fuera del tema)
+            if (updateInfo != null && !updateDismissed) {
+                UpdateModal(
+                    info = updateInfo!!,
+                    onDismiss = { updateDismissed = true }
+                )
             }
         }
     }
