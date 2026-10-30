@@ -296,7 +296,7 @@ private fun LyricsArea(
             // Con contentPadding vertical = 240dp y altura fija 64dp:
             // El item currentIdx queda centrado si scrolleamos a:
             // offset = currentIdx * 64dp - (viewportHeight/2 - 32dp)
-            listState.scrollToItem(
+            listState.animateScrollToItem(
                 index = currentIdx,
                 scrollOffset = -(100)  // ajuste fino para centrar
             )

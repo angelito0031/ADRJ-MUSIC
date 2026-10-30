@@ -28,6 +28,8 @@ import com.adrj.music.ui.components.AdrjBottomBar
 import com.adrj.music.ui.components.MiniPlayer
 import com.adrj.music.ui.components.IosGlassBackground
 import com.adrj.music.ui.screens.*
+import com.adrj.music.ui.screens.WelcomeScreen
+import com.adrj.music.LocalServerHolder
 import com.adrj.music.ui.theme.ADRJmusicTheme
 import com.adrj.music.updates.UpdateChecker
 import com.adrj.music.updates.UpdateInfo
@@ -72,7 +74,6 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val ctx = LocalContext.current
-            // FIX: settings derivado solo cuando cambian sus campos (no en cada recomposición)
             val settings = remember(PrefsState.dark, PrefsState.accent, PrefsState.fontScale, PrefsState.dynamicColor) {
                 Settings(
                     dark = PrefsState.dark,
@@ -81,24 +82,32 @@ class MainActivity : ComponentActivity() {
                     dynamicColor = PrefsState.dynamicColor
                 )
             }
-
+            
+            // Arrancar el servidor en background
+            LaunchedEffect(Unit) {
+                LocalServerHolder.start(ctx)
+            }
+            
+            // Estado de la bienvenida
+            var showWelcome by remember { mutableStateOf(true) }
+            
+            // Mostrar bienvenida primero
+            if (showWelcome) {
+                ADRJmusicTheme(darkTheme = settings.dark, accent = settings.accent, fontScale = settings.fontScale) {
+                    WelcomeScreen(
+                        onReady = { showWelcome = false },
+                        onServerReady = LocalServerHolder.isReady
+                    )
+                }
+                return@setContent
+            }
+            
             // Estado de actualizaciones
             var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
             var updateDismissed by remember { mutableStateOf(false) }
 
             LaunchedEffect(Unit) {
-                android.widget.Toast.makeText(ctx, "Check iniciado...", android.widget.Toast.LENGTH_SHORT).show()
-                try {
-                    val result = UpdateChecker.check(ctx, force = true)
-                    if (result != null) {
-                        android.widget.Toast.makeText(ctx, "Update: v${result.latestVersionName}", android.widget.Toast.LENGTH_LONG).show()
-                    } else {
-                        android.widget.Toast.makeText(ctx, "Sin update (null)", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                    updateInfo = result
-                } catch (e: Throwable) {
-                    android.widget.Toast.makeText(ctx, "Error: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
-                }
+                updateInfo = UpdateChecker.check(ctx, force = true)
             }
 
             ADRJmusicTheme(
