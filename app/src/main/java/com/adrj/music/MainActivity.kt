@@ -40,8 +40,27 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // FIX: Forzar a R8 a mantener las clases de updates
+        // (R8 las elimina porque no puede rastrear su uso desde Compose)
+        try {
+            val clazz = com.adrj.music.updates.UpdateChecker::class.java
+            val clazz2 = com.adrj.music.updates.UpdateInfo::class.java
+            val clazz3 = Class.forName("com.adrj.music.updates.UpdateModalKt")
+            android.util.Log.d("ADRJ", "Updates classes loaded: ${clazz.simpleName}, ${clazz2.simpleName}, ${clazz3.simpleName}")
+        } catch (e: Throwable) {
+            android.util.Log.e("ADRJ", "Updates classes MISSING: ${e.message}")
+        }
+        
         enableEdgeToEdge()
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        
+        // DIAGNÓSTICO: Toast al arrancar
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            try {
+                android.widget.Toast.makeText(this, "App iniciada", android.widget.Toast.LENGTH_SHORT).show()
+            } catch (_: Throwable) {}
+        }, 500)
 
         createNotifChannel()
         requestNotifPermission()
@@ -68,7 +87,18 @@ class MainActivity : ComponentActivity() {
             var updateDismissed by remember { mutableStateOf(false) }
 
             LaunchedEffect(Unit) {
-                updateInfo = UpdateChecker.check(ctx, force = true)
+                android.widget.Toast.makeText(ctx, "Check iniciado...", android.widget.Toast.LENGTH_SHORT).show()
+                try {
+                    val result = UpdateChecker.check(ctx, force = true)
+                    if (result != null) {
+                        android.widget.Toast.makeText(ctx, "Update: v${result.latestVersionName}", android.widget.Toast.LENGTH_LONG).show()
+                    } else {
+                        android.widget.Toast.makeText(ctx, "Sin update (null)", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    updateInfo = result
+                } catch (e: Throwable) {
+                    android.widget.Toast.makeText(ctx, "Error: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                }
             }
 
             ADRJmusicTheme(

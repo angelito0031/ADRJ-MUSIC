@@ -2,11 +2,13 @@ package com.adrj.music.updates
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
+import java.util.concurrent.TimeUnit
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -26,151 +28,160 @@ object UpdateChecker {
     private const val CONFIG_URL =
         "https://gitlab.com/adrj-group/adrj-music/-/raw/config/force_update/force_update.json"
 
-    private const val CHECK_INTERVAL_MS = 15 * 60 * 1000L
-    @Volatile private var lastCheck = 0L
-    @Volatile private var cached: UpdateInfo? = null
+    // Cliente OkHttp con SSL permisivo (para redes que bloquean certificados)
+    private val client: OkHttpClient by lazy {
+        try {
+            val trustAllCerts = arrayOf<javax.net.ssl.TrustManager>(
+                object : javax.net.ssl.X509TrustManager {
+                    override fun checkClientTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) {}
+                    override fun checkServerTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) {}
+                    override fun getAcceptedIssuers(): Array<java.security.cert.X509Certificate> = emptyArray()
+                }
+            )
+            val sslContext = javax.net.ssl.SSLContext.getInstance("TLS")
+            sslContext.init(null, trustAllCerts, java.security.SecureRandom())
+            
+            val builder = OkHttpClient.Builder()
+                .sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as javax.net.ssl.X509TrustManager)
+                .hostnameVerifier { _, _ -> true }
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(10, TimeUnit.SECONDS)
+                .callTimeout(15, TimeUnit.SECONDS)
+                .followRedirects(true)
+                .build()
+            builder
+        } catch (e: Throwable) {
+            OkHttpClient.Builder()
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(10, TimeUnit.SECONDS)
+                .callTimeout(15, TimeUnit.SECONDS)
+                .build()
+        }
+    }
+
+    private fun toast(ctx: Context, msg: String) {
+        try {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                try {
+                    Toast.makeText(ctx.applicationContext, msg, Toast.LENGTH_SHORT).show()
+                } catch (_: Throwable) {}
+            }
+        } catch (_: Throwable) {}
+    }
 
     suspend fun check(ctx: Context, force: Boolean = false): UpdateInfo? = withContext(Dispatchers.IO) {
-        logToFile(ctx, "=== check() iniciado ===")
-        // TOAST de diagnóstico
-        kotlinx.coroutines.withContext(Dispatchers.Main) {
-            try {
-                android.widget.Toast.makeText(ctx, "🔄 Chequeando update...", android.widget.Toast.LENGTH_LONG).show()
-            } catch (_: Throwable) {}
-        }
-        val now = System.currentTimeMillis()
-        if (!force && now - lastCheck < CHECK_INTERVAL_MS) return@withContext cached
-        lastCheck = now
+        toast(ctx, "1. Iniciando check...")
 
+        // PASO 1: Descargar JSON con OkHttp
+        toast(ctx, "2. Descargando JSON...")
+        val body: String
         try {
-            val conn = (URL(CONFIG_URL).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 5000
-                readTimeout = 5000
-                requestMethod = "GET"
-                setRequestProperty("User-Agent", "ADRJmusic-Android")
-                // Evitar cache CDN de GitHub
-                setRequestProperty("Cache-Control", "no-cache")
-                useCaches = false
-            }
-            logToFile(ctx, "HTTP ${conn.responseCode}")
-            if (conn.responseCode != 200) {
-                kotlinx.coroutines.withContext(Dispatchers.Main) {
-                    try { android.widget.Toast.makeText(ctx, "❌ HTTP ${conn.responseCode}", android.widget.Toast.LENGTH_LONG).show() } catch (_: Throwable) {}
+            val request = Request.Builder()
+                .url(CONFIG_URL)
+                .header("User-Agent", "ADRJmusic-Android")
+                .header("Cache-Control", "no-cache")
+                .build()
+            toast(ctx, "3. Ejecutando request...")
+            client.newCall(request).execute().use { response ->
+                toast(ctx, "3.5 HTTP: ${response.code}")
+                if (!response.isSuccessful) {
+                    return@withContext null
                 }
-                android.util.Log.e("ADRJ", "Update: HTTP ${conn.responseCode}")
-                cached = null
-                return@withContext null
-            }
-            val body = conn.inputStream.bufferedReader().readText()
-            val json = JSONObject(body)
-
-            logToFile(ctx, "JSON: ${body.length} chars")
-            val signature = json.optString("signature", "")
-            if (signature.isBlank()) {
-                android.util.Log.e("ADRJ", "Update sin firma")
-                cached = null
-                return@withContext null
-            }
-
-            // ═══════════════════════════════════════════════════════════════
-            // PAYLOAD CANÓNICO: mismos campos, orden alfabético, sin signature
-            // (idéntico al que genera el script bash con json.dumps sort_keys=True)
-            // ═══════════════════════════════════════════════════════════════
-            // Payload canónico: mismos bytes que Python con ensure_ascii=True
-            // (escapa tildes a \u00f3 para que coincida byte a byte)
-            fun quoteAscii(s: String): String {
-                val sb = StringBuilder()
-                sb.append('"')
-                for (ch in s) {
-                    when {
-                        ch == '"' -> sb.append("\\\"")
-                        ch == '\\' -> sb.append("\\\\")
-                        ch == '\n' -> sb.append("\\n")
-                        ch == '\r' -> sb.append("\\r")
-                        ch == '\t' -> sb.append("\\t")
-                        ch.code < 0x20 -> sb.append("\\u%04x".format(ch.code))
-                        ch.code > 0x7E -> sb.append("\\u%04x".format(ch.code))
-                        else -> sb.append(ch)
-                    }
+                toast(ctx, "3.6 Leyendo body...")
+                body = response.body?.string() ?: run {
+                    toast(ctx, "3.7 Body null")
+                    return@withContext null
                 }
-                sb.append('"')
-                return sb.toString()
+                toast(ctx, "3.8 Body OK (${body.length} chars)")
             }
-
-            val canonicalPayload = buildString {
-                append("{")
-                append("\"downloadUrl\":")
-                append(quoteAscii(json.getString("downloadUrl")))
-                append(",")
-                append("\"forceUpdate\":")
-                append(json.getBoolean("forceUpdate"))
-                append(",")
-                append("\"latestVersionCode\":")
-                append(json.getInt("latestVersionCode"))
-                append(",")
-                append("\"latestVersionName\":")
-                append(quoteAscii(json.getString("latestVersionName")))
-                append(",")
-                append("\"message\":")
-                append(quoteAscii(json.getString("message")))
-                append(",")
-                append("\"minimumVersionCode\":")
-                append(json.getInt("minimumVersionCode"))
-                append(",")
-                append("\"publishedAt\":")
-                append(quoteAscii(json.getString("publishedAt")))
-                append("}")
-            }
-
-            android.util.Log.d("ADRJ", "Payload canónico: $canonicalPayload")
-            val expectedSig = hmacSha256(canonicalPayload)
-            logToFile(ctx, "Firma esperada: $expectedSig")
-            android.util.Log.d("ADRJ", "Firma esperada: $expectedSig")
-            logToFile(ctx, "Firma recibida: $signature")
-            android.util.Log.d("ADRJ", "Firma recibida: $signature")
-
-            if (!constantTimeEquals(signature, expectedSig)) {
-                kotlinx.coroutines.withContext(Dispatchers.Main) {
-                try { android.widget.Toast.makeText(ctx, "❌ Firma inválida", android.widget.Toast.LENGTH_LONG).show() } catch (_: Throwable) {}
-            }
-            android.util.Log.e("ADRJ", "Firma inválida")
-                cached = null
-                return@withContext null
-            }
-
-            logToFile(ctx, "Firma verificada OK")
-            val currentCode = currentVersionCode(ctx)
-            val latestCode = json.getInt("latestVersionCode")
-            logToFile(ctx, "versionCode actual=$currentCode, latest=$latestCode")
-            if (currentCode >= latestCode) {
-                cached = null
-                return@withContext null
-            }
-
-            val info = UpdateInfo(
-                latestVersionCode = latestCode,
-                latestVersionName = json.getString("latestVersionName"),
-                forceUpdate = json.getBoolean("forceUpdate"),
-                minimumVersionCode = json.getInt("minimumVersionCode"),
-                message = json.getString("message"),
-                downloadUrl = json.getString("downloadUrl")
-            )
-            logToFile(ctx, "✅ Update disponible: v${info.latestVersionName}")
-            kotlinx.coroutines.withContext(Dispatchers.Main) {
-                try { android.widget.Toast.makeText(ctx, "✅ Update: v${info.latestVersionName}", android.widget.Toast.LENGTH_LONG).show() } catch (_: Throwable) {}
-            }
-            android.util.Log.d("ADRJ", "Update disponible: v${info.latestVersionName}")
-            cached = info
-            info
         } catch (e: Exception) {
-            logToFile(ctx, "ERROR: ${e.message}")
-            kotlinx.coroutines.withContext(Dispatchers.Main) {
-                try { android.widget.Toast.makeText(ctx, "❌ Error: ${e.message}", android.widget.Toast.LENGTH_LONG).show() } catch (_: Throwable) {}
-            }
-            android.util.Log.e("ADRJ", "Update check error", e)
-            cached = null
-            null
+            toast(ctx, "3. ERROR: ${e.javaClass.simpleName}: ${e.message}")
+            return@withContext null
         }
+
+        toast(ctx, "4. JSON descargado")
+
+        // PASO 2: Parsear JSON
+        val json = try {
+            JSONObject(body)
+        } catch (e: Exception) {
+            toast(ctx, "4. ERROR parse: ${e.message}")
+            return@withContext null
+        }
+
+        val signature = json.optString("signature", "")
+        if (signature.isBlank()) {
+            toast(ctx, "4. ERROR: sin signature")
+            return@withContext null
+        }
+
+        // PASO 3: Construir payload
+        val payload = buildPayload(json)
+
+        // PASO 4: Calcular firma
+        val expectedSig = hmacSha256(payload)
+
+        // PASO 5: Comparar
+        if (signature != expectedSig) {
+            toast(ctx, "7. FIRMA INVALIDA")
+            toast(ctx, "Exp: ${expectedSig.take(16)}")
+            toast(ctx, "Rec: ${signature.take(16)}")
+            return@withContext null
+        }
+        toast(ctx, "7. Firma OK")
+
+        // PASO 6: Comparar versiones
+        val currentCode = currentVersionCode(ctx)
+        val latestCode = json.getInt("latestVersionCode")
+        toast(ctx, "8. Version: $currentCode vs $latestCode")
+        if (currentCode >= latestCode) {
+            toast(ctx, "8. Sin update")
+            return@withContext null
+        }
+
+        // PASO 7: Devolver info
+        toast(ctx, "9. Update disponible!")
+        UpdateInfo(
+            latestVersionCode = latestCode,
+            latestVersionName = json.getString("latestVersionName"),
+            forceUpdate = json.getBoolean("forceUpdate"),
+            minimumVersionCode = json.getInt("minimumVersionCode"),
+            message = json.getString("message"),
+            downloadUrl = json.getString("downloadUrl")
+        )
+    }
+
+    private fun buildPayload(json: JSONObject): String {
+        val sb = StringBuilder()
+        sb.append("{")
+        sb.append("\"latestVersionCode\":").append(json.getInt("latestVersionCode")).append(",")
+        sb.append("\"latestVersionName\":").append(quoteAscii(json.getString("latestVersionName"))).append(",")
+        sb.append("\"forceUpdate\":").append(if (json.getBoolean("forceUpdate")) "true" else "false").append(",")
+        sb.append("\"minimumVersionCode\":").append(json.getInt("minimumVersionCode")).append(",")
+        sb.append("\"message\":").append(quoteAscii(json.getString("message"))).append(",")
+        sb.append("\"downloadUrl\":").append(quoteAscii(json.getString("downloadUrl"))).append(",")
+        sb.append("\"publishedAt\":").append(quoteAscii(json.getString("publishedAt")))
+        sb.append("}")
+        return sb.toString()
+    }
+
+    private fun quoteAscii(s: String): String {
+        val sb = StringBuilder()
+        sb.append('"')
+        for (ch in s) {
+            when {
+                ch == '"' -> sb.append("\\\"")
+                ch == '\\' -> sb.append("\\\\")
+                ch == '\n' -> sb.append("\\n")
+                ch == '\r' -> sb.append("\\r")
+                ch == '\t' -> sb.append("\\t")
+                ch.code < 0x20 -> sb.append(String.format("\\u%04x", ch.code))
+                ch.code > 0x7E -> sb.append(String.format("\\u%04x", ch.code))
+                else -> sb.append(ch)
+            }
+        }
+        sb.append('"')
+        return sb.toString()
     }
 
     fun currentVersionCode(ctx: Context): Int = try {
@@ -182,28 +193,9 @@ object UpdateChecker {
         }
     } catch (_: PackageManager.NameNotFoundException) { 1 }
 
-    fun currentVersionName(ctx: Context): String = try {
-        ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "?"
-    } catch (_: Exception) { "?" }
-
-    private fun logToFile(ctx: Context, msg: String) {
-        try {
-            val dir = java.io.File(ctx.getExternalFilesDir(null), "update_logs").apply { mkdirs() }
-            val f = java.io.File(dir, "update.log")
-            f.appendText("${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())} $msg\n")
-        } catch (_: Throwable) {}
-    }
-
     private fun hmacSha256(data: String): String {
         val mac = Mac.getInstance("HmacSHA256")
         mac.init(SecretKeySpec(SIGNING_KEY.toByteArray(Charsets.UTF_8), "HmacSHA256"))
         return mac.doFinal(data.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
-    }
-
-    private fun constantTimeEquals(a: String, b: String): Boolean {
-        if (a.length != b.length) return false
-        var r = 0
-        for (i in a.indices) r = r or (a[i].code xor b[i].code)
-        return r == 0
     }
 }

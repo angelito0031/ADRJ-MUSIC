@@ -1,13 +1,13 @@
-# ── Youtubedl-android (usa JNI + reflection) ──
+# ── Youtubedl-android (JNI + reflection) ──
 -keep class com.yausername.** { *; }
 -keep class com.yausername.youtubedl_android.** { *; }
 -keep class com.yausername.ffmpeg.** { *; }
 
-# ── Coil (usa reflection en ImageLoader) ──
+# ── Coil (usa reflection) ──
 -keep class coil.** { *; }
 -dontwarn coil.**
 
-# ── OkHttp (usa reflection + Platform) ──
+# ── OkHttp ──
 -dontwarn okhttp3.**
 -dontwarn okio.**
 -dontwarn org.conscrypt.**
@@ -18,31 +18,31 @@
 -keep class fi.iki.elonen.** { *; }
 -dontwarn fi.iki.elonen.**
 
-# ── Media3 (ExoPlayer) ──
+# ── Media3 ──
 -keep class androidx.media3.** { *; }
 -dontwarn androidx.media3.**
 
-# ── Kotlin Coroutines ──
+# ── Coroutines ──
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
 -keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
 
-# ── Compose (no romper el runtime) ──
+# ── Compose runtime ──
 -keep class androidx.compose.runtime.** { *; }
 
 # ── Room ──
 -keep class * extends androidx.room.RoomDatabase
 -dontwarn androidx.room.paging.**
 
-# ── Mantener nombres de clases de datos (para JSON / reflexión) ──
+# ── Data classes ──
 -keepclassmembers class com.adrj.music.** {
     <init>(...);
 }
 
-# ── No advertir por Jakarta / javax (usados por libs internas) ──
--dontwarn javax.annotation.**
--dontwarn jakarta.annotation.**
+# ── Updates (CRÍTICO: sin allowshrinking) ──
+-keep class com.adrj.music.updates.** { *; }
+-keepclassmembers class com.adrj.music.updates.** { *; }
 
-# ── Reducir tamaño eliminando logs de debug ──
+# ── Reducir logs ──
 -assumenosideeffects class android.util.Log {
     public static *** d(...);
     public static *** v(...);

@@ -32,3 +32,6 @@ signing.properties
 node_modules/
 package-lock.json
 config.json
+
+# Server
+server/node_modules/
