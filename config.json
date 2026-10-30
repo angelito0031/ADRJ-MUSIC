@@ -1,10 +1,10 @@
 {
-  "latestVersionCode": 2,
-  "latestVersionName": "1.1.0",
+  "latestVersionCode": 3,
+  "latestVersionName": "1.3.0",
   "forceUpdate": false,
   "minimumVersionCode": 1,
-  "message": "Actualización de prueba del sistema",
+  "message": "¡Bienvenido a ADRJ Music 1.3.0! Nueva pantalla de bienvenida, logo renovado, letras más suaves y app más fluida.",
   "downloadUrl": "https://github.com/angelito0031/ADRJ-MUSIC/releases",
-  "publishedAt": "2026-10-30T03:29:58Z",
-  "signature": "339597f1bb3861c15d08613916d527abc81c6d394505b1f8f7755871a9e91cf7"
+  "publishedAt": "2026-10-30T16:28:18Z",
+  "signature": "a2fa190fb4b0d1c7142d48479267cacc40776f9b86f6cc0c6ccfc6e69256d1f1"
 }
