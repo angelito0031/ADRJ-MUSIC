@@ -4,7 +4,7 @@
   "forceUpdate": false,
   "minimumVersionCode": 1,
   "message": "Actualización de prueba del sistema",
-  "downloadUrl": "https://gitlab.com/adrj-group/adrj-music/-/releases/v1.1.0/downloads/app-release.apk",
-  "publishedAt": "2026-10-30T02:33:46Z",
-  "signature": "cae3fce0e518ed06a9af1769f1d8108f054b63a5335d2bc3f328b3bba09f07f7"
+  "downloadUrl": "https://github.com/angelito0031/ADRJ-MUSIC/releases",
+  "publishedAt": "2026-10-30T03:26:32Z",
+  "signature": "b2f9cd9cae6d18f00e606114b2ec0bee8c653865cf99fdf148f0b7c0fae99297"
 }

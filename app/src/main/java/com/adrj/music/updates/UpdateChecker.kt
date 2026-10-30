@@ -5,10 +5,9 @@ import android.content.pm.PackageManager
 import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import org.json.JSONObject
-import java.util.concurrent.TimeUnit
+import java.net.HttpURLConnection
+import java.net.URL
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -26,38 +25,7 @@ object UpdateChecker {
     private const val SIGNING_KEY = "db35004ffd72aceeb2ba9235c44a3e53ea2f372853277e7bef21f46afd396f85"
 
     private const val CONFIG_URL =
-        "https://gitlab.com/adrj-group/adrj-music/-/raw/config/force_update/force_update.json"
-
-    // Cliente OkHttp con SSL permisivo (para redes que bloquean certificados)
-    private val client: OkHttpClient by lazy {
-        try {
-            val trustAllCerts = arrayOf<javax.net.ssl.TrustManager>(
-                object : javax.net.ssl.X509TrustManager {
-                    override fun checkClientTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) {}
-                    override fun checkServerTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) {}
-                    override fun getAcceptedIssuers(): Array<java.security.cert.X509Certificate> = emptyArray()
-                }
-            )
-            val sslContext = javax.net.ssl.SSLContext.getInstance("TLS")
-            sslContext.init(null, trustAllCerts, java.security.SecureRandom())
-            
-            val builder = OkHttpClient.Builder()
-                .sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as javax.net.ssl.X509TrustManager)
-                .hostnameVerifier { _, _ -> true }
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(10, TimeUnit.SECONDS)
-                .callTimeout(15, TimeUnit.SECONDS)
-                .followRedirects(true)
-                .build()
-            builder
-        } catch (e: Throwable) {
-            OkHttpClient.Builder()
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(10, TimeUnit.SECONDS)
-                .callTimeout(15, TimeUnit.SECONDS)
-                .build()
-        }
-    }
+        "https://adrj-music.onrender.com/api/version"
 
     private fun toast(ctx: Context, msg: String) {
         try {
@@ -72,28 +40,34 @@ object UpdateChecker {
     suspend fun check(ctx: Context, force: Boolean = false): UpdateInfo? = withContext(Dispatchers.IO) {
         toast(ctx, "1. Iniciando check...")
 
-        // PASO 1: Descargar JSON con OkHttp
+        // PASO 1: Descargar JSON con HttpURLConnection
         toast(ctx, "2. Descargando JSON...")
         val body: String
         try {
-            val request = Request.Builder()
-                .url(CONFIG_URL)
-                .header("User-Agent", "ADRJmusic-Android")
-                .header("Cache-Control", "no-cache")
-                .build()
-            toast(ctx, "3. Ejecutando request...")
-            client.newCall(request).execute().use { response ->
-                toast(ctx, "3.5 HTTP: ${response.code}")
-                if (!response.isSuccessful) {
-                    return@withContext null
-                }
-                toast(ctx, "3.6 Leyendo body...")
-                body = response.body?.string() ?: run {
-                    toast(ctx, "3.7 Body null")
-                    return@withContext null
-                }
-                toast(ctx, "3.8 Body OK (${body.length} chars)")
+            val url = URL(CONFIG_URL)
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 30000
+            conn.readTimeout = 30000
+            conn.setRequestProperty("User-Agent", "ADRJmusic-Android")
+            conn.setRequestProperty("Accept", "application/json")
+            
+            toast(ctx, "3. Conectando...")
+            conn.connect()
+            toast(ctx, "3.5 Conectado!")
+            
+            val code = conn.responseCode
+            toast(ctx, "3.6 HTTP: $code")
+            
+            if (code != 200) {
+                return@withContext null
             }
+            
+            toast(ctx, "3.7 Leyendo body...")
+            body = conn.inputStream.bufferedReader().use { it.readText() }
+            conn.disconnect()
+            
+            toast(ctx, "3.8 Body OK (${body.length} chars)")
         } catch (e: Exception) {
             toast(ctx, "3. ERROR: ${e.javaClass.simpleName}: ${e.message}")
             return@withContext null
